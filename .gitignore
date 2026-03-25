@@ -40,7 +40,7 @@ dist-ssr/
 
 # Databases
 *.db
-!backend/vapt_data.db # Keeping the project's database
+!backend/vapt_data.db
 
 # Reports & Presentations
 *.pdf
