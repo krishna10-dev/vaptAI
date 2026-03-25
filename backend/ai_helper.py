@@ -74,6 +74,35 @@ def get_ai_analysis(target, scan_results):
         # Automatically fallback to offline mode so the UI doesn't break
         return get_offline_report(target, scan_results)
 
+def get_ai_patch(vulnerability_details):
+    """
+    Generates a code-level remediation patch for a specific vulnerability.
+    """
+    if not GEMINI_API_KEY:
+        return "⚠️ AI API Key missing. Please provide an API key to generate a patch."
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        prompt = f"""Generate a specific code-level remediation patch for this vulnerability:
+        {json.dumps(vulnerability_details)}
+        
+        Return the response in a clean Markdown format including:
+        1. 🛠️ **The Fix**: A clear code snippet or configuration change.
+        2. 📝 **Explanation**: Why this fix works.
+        3. 🚀 **Next Steps**: How to apply and test it.
+        
+        Focus on providing practical, copy-pasteable code for the relevant environment (e.g., Nginx, Apache, Python, etc.)."""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        return response.text
+
+    except Exception as e:
+        print(f"⚠️ AI Patch Generation Failed: {e}")
+        return "⚠️ Failed to generate patch. Please try again or check logs."
+
 def get_chat_response(message, scan_context):
     """
     Conversational assistant. Provides a helpful static response if API fails.

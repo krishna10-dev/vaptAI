@@ -14,7 +14,7 @@ from reportlab.pdfgen import canvas
 # Import custom modules
 from scanner import VulnerabilityScanner
 from remediation import get_remediation
-from ai_helper import get_ai_analysis, get_chat_response
+from ai_helper import get_ai_analysis, get_chat_response, get_ai_patch
 
 app = Flask(__name__)
 CORS(app)
@@ -358,6 +358,23 @@ def generate_report():
     c.save()
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f"VAPT_Report_{target}.pdf", mimetype='application/pdf')
+
+# --- ROUTE 6: AUTO-PATCH GENERATOR ---
+@app.route('/api/generate_patch', methods=['POST'])
+def generate_patch():
+    data = request.json
+    vulnerability = data.get('vulnerability')
+    
+    if not vulnerability:
+        return jsonify({"error": "No vulnerability details provided"}), 400
+        
+    print(f"🛠️ Generating AI Patch for {vulnerability.get('service', 'Unknown')}...")
+    patch_content = get_ai_patch(vulnerability)
+    
+    return jsonify({
+        "status": "success",
+        "patch": patch_content
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

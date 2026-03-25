@@ -57,6 +57,12 @@ function App() {
   const [scanId, setScanId] = useState(null);
   const [scanMessage, setScanMessage] = useState("");
 
+  // --- NEW: Auto-Patch State ---
+  const [selectedVuln, setSelectedVuln] = useState(null);
+  const [patchLoading, setPatchLoading] = useState(false);
+  const [aiPatch, setAiPatch] = useState(null);
+  const [patchModalOpen, setPatchModalOpen] = useState(false);
+
   const fetchHistory = async () => {
     try {
       const res = await axios.get("http://127.0.0.1:5000/api/history");
@@ -207,6 +213,33 @@ function App() {
       link.click();
     } catch (err) {
       console.error("Download Error", err);
+    }
+  };
+
+  // --- NEW: Handle Node Click ---
+  const onNodeClick = (event, node) => {
+    if (node.id.startsWith("port-")) {
+      const index = parseInt(node.id.split("-")[1]);
+      const vuln = scanData[index];
+      setSelectedVuln(vuln);
+      setPatchModalOpen(true);
+      setAiPatch(null); // Reset patch when selecting new vuln
+    }
+  };
+
+  // --- NEW: Generate Patch ---
+  const handleGeneratePatch = async (vuln) => {
+    setPatchLoading(true);
+    try {
+      const res = await axios.post("http://127.0.0.1:5000/api/generate_patch", {
+        vulnerability: vuln,
+      });
+      setAiPatch(res.data.patch);
+    } catch (err) {
+      console.error("Patch Generation Error", err);
+      setAiPatch("⚠️ Failed to generate patch.");
+    } finally {
+      setPatchLoading(false);
     }
   };
 
@@ -553,6 +586,7 @@ function App() {
                             fontSize: "0.65rem",
                             width: 110,
                             whiteSpace: "pre-wrap",
+                            cursor: "pointer",
                           },
                         };
                       }),
@@ -575,6 +609,7 @@ function App() {
                         style: { stroke: "#30363d", strokeWidth: 1 },
                       })),
                     ]}
+                    onNodeClick={onNodeClick}
                     fitView
                   >
                     <Background color="#161b22" gap={20} variant="dots" />
@@ -737,6 +772,7 @@ function App() {
                       <th>SERVICE</th>
                       <th>VERSION</th>
                       <th>RISK</th>
+                      <th>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -756,6 +792,27 @@ function App() {
                             <Lock size={14} />
                           ) : null}
                           {item.risk_level}
+                        </td>
+                        <td>
+                          <button
+                            className="btn-patch"
+                            onClick={() => {
+                              setSelectedVuln(item);
+                              setPatchModalOpen(true);
+                              handleGeneratePatch(item);
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "0.75rem",
+                              background: "#238636",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Generate Patch
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -918,6 +975,161 @@ function App() {
           <Activity size={28} color="#fff" />
         </button>
       </div>
+
+      {/* --- NEW: Auto-Patch Modal --- */}
+      {patchModalOpen && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setPatchModalOpen(false)}
+        >
+          <div
+            className="modal-content"
+            style={{
+              background: "#161b22",
+              width: "80%",
+              maxWidth: "800px",
+              maxHeight: "80vh",
+              borderRadius: "12px",
+              border: "1px solid #30363d",
+              padding: "25px",
+              overflowY: "auto",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px",
+                borderBottom: "1px solid #30363d",
+                paddingBottom: "15px",
+              }}
+            >
+              <h2 style={{ margin: 0, color: "#2ea043" }}>
+                🛠️ AI Remediation Patch
+              </h2>
+              <button
+                onClick={() => setPatchModalOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#8b949e",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {selectedVuln && (
+              <div
+                style={{
+                  background: "#0d1117",
+                  padding: "15px",
+                  borderRadius: "8px",
+                  border: "1px solid #21262d",
+                  marginBottom: "20px",
+                }}
+              >
+                <div style={{ fontSize: "0.9rem", color: "#8b949e" }}>
+                  Targeting Vulnerability:
+                </div>
+                <div style={{ fontWeight: "bold", color: "#f85149" }}>
+                  Port {selectedVuln.port} - {selectedVuln.service} (
+                  {selectedVuln.risk_level})
+                </div>
+              </div>
+            )}
+
+            {!aiPatch && !patchLoading && (
+              <div style={{ textAlign: "center", padding: "40px" }}>
+                <button
+                  onClick={() => handleGeneratePatch(selectedVuln)}
+                  style={{
+                    padding: "12px 24px",
+                    background: "#238636",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Generate Code-Level Patch
+                </button>
+              </div>
+            )}
+
+            {patchLoading && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "40px",
+                  color: "#8b949e",
+                }}
+              >
+                <div
+                  className="spinner"
+                  style={{ margin: "0 auto 15px" }}
+                ></div>
+                <p>AI is crafting your security patch...</p>
+              </div>
+            )}
+
+            {aiPatch && (
+              <div
+                className="patch-content"
+                style={{
+                  color: "#c9d1d9",
+                  fontSize: "0.95rem",
+                  lineHeight: "1.6",
+                  whiteSpace: "pre-wrap",
+                  background: "#0d1117",
+                  padding: "20px",
+                  borderRadius: "8px",
+                  border: "1px solid #30363d",
+                  fontFamily: "monospace",
+                }}
+              >
+                {aiPatch}
+                <div style={{ marginTop: "20px", textAlign: "right" }}>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiPatch);
+                      alert("Patch copied to clipboard!");
+                    }}
+                    style={{
+                      padding: "8px 15px",
+                      background: "#1f6feb",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Copy to Clipboard
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
