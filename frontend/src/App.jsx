@@ -1,1135 +1,481 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
-  ShieldAlert,
-  Search,
-  Server,
-  Activity,
-  Lock,
-  History,
-  FileText,
-  Hash, // <--- NEW: Imported Hash Icon
+  ShieldAlert, Search, Server, Activity, Lock, History, FileText, Hash, Send, 
+  Globe, ShieldCheck, Zap, Cpu, Database, MapPin, MousePointer2, AlertTriangle, X,
+  ExternalLink, Mail, Calendar, Shield
 } from "lucide-react";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import ReactFlow, { Background, Controls } from "reactflow";
+import ReactFlow, { Background, Controls, Handle, Position } from "reactflow";
 import "reactflow/dist/style.css";
 import "./App.css";
 
+const CustomNode = ({ data }) => (
+  <div className="custom-topology-node" style={{ 
+    padding: '12px', borderRadius: '10px', 
+    background: data.color || '#161b22', 
+    border: `1px solid ${data.borderColor || '#30363d'}`,
+    color: '#fff', fontSize: '0.7rem', minWidth: '140px', textAlign: 'center',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.4)'
+  }}>
+    <Handle type="target" position={Position.Top} style={{ visibility: 'hidden' }} />
+    <div style={{ fontWeight: '800', marginBottom: '4px' }}>{data.label}</div>
+    <div style={{ opacity: 0.6, fontSize: '0.6rem' }}>{data.subtext}</div>
+    <Handle type="source" position={Position.Bottom} style={{ visibility: 'hidden' }} />
+  </div>
+);
+
+const nodeTypes = { custom: CustomNode };
+
 function App() {
   const [target, setTarget] = useState("");
+  const [scanMode, setScanMode] = useState("quick");
   const [loading, setLoading] = useState(false);
   const [scanData, setScanData] = useState(null);
+  const [reconData, setReconData] = useState(null);
+  const [sslData, setSslData] = useState(null);
+  const [healthData, setHealthData] = useState(null);
+  const [geoData, setGeoData] = useState(null);
+  const [subdomains, setSubdomains] = useState([]);
   const [history, setHistory] = useState([]);
   const [error, setError] = useState(null);
-  const [integrityHash, setIntegrityHash] = useState(null);
-
-  // --- NEW: Subdomain State ---
-  const [subdomains, setSubdomains] = useState([]);
-
-  // --- NEW: AI Report State ---
   const [aiReport, setAiReport] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const [securityScore, setSecurityScore] = useState(null);
-
-  // --- NEW: SecureChat State ---
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([
-    {
-      role: "assistant",
-      content:
-        "Hi! I'm your VaptAI Security Assistant. Ask me anything about your scan results!",
-    },
+    { role: "assistant", content: "Command Center Ready. Specify target for reconnaissance." }
   ]);
-  const [chatLoading, setChatLoading] = useState(false);
+  const [scanId, setScanId] = useState(null);
+  const [scanStatus, setScanStatus] = useState("");
+  const [activeTab, setActiveTab] = useState("vulnerabilities");
+  const [selectedNodeInfo, setSelectedNodeInfo] = useState(null);
+  const [fileHashData, setFileHashData] = useState(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  
+  // New Security Tools State
+  const [cryptoSubTab, setCryptoSubTab] = useState("integrity");
+  const [aesInput, setAesInput] = useState("");
+  const [aesKey, setAesKey] = useState("");
+  const [aesResult, setAesResult] = useState("");
+  const [pcapData, setPcapData] = useState(null);
+  const [pcapLoading, setPcapLoading] = useState(false);
 
-  // --- NEW: Scroll Ref ---
   const chatEndRef = useRef(null);
 
-  // --- NEW: Status Polling State ---
-  const [scanId, setScanId] = useState(null);
-  const [scanMessage, setScanMessage] = useState("");
+  useEffect(() => { fetchHistory(); }, []);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
-  // --- NEW: Auto-Patch State ---
-  const [selectedVuln, setSelectedVuln] = useState(null);
-  const [patchLoading, setPatchLoading] = useState(false);
-  const [aiPatch, setAiPatch] = useState(null);
-  const [patchModalOpen, setPatchModalOpen] = useState(false);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await axios.get("http://127.0.0.1:5000/api/history");
-      setHistory(res.data);
-    } catch (err) {
-      console.error("Failed to load history");
-    }
+  const fetchHistory = () => {
+    axios.get("http://127.0.0.1:5000/api/history").then(res => setHistory(res.data)).catch(() => {});
   };
 
-  useEffect(() => {
-    fetchHistory();
-  }, []);
-
-  // --- NEW: Scroll Effect ---
-  useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [chatMessages]);
-
-  const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
-
-    const userMsg = { role: "user", content: chatInput };
-    setChatMessages((prev) => [...prev, userMsg]);
-    setChatInput("");
-    setChatLoading(true);
-
-    try {
-      const res = await axios.post("http://127.0.0.1:5000/api/chat", {
-        message: chatInput,
-        scan_context: {
-          target: target,
-          results: scanData,
-          subdomains: subdomains,
-        },
-      });
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: res.data.response },
-      ]);
-    } catch (err) {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I'm having trouble connecting right now.",
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
+  const handleFileHash = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setFileLoading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    axios.post("http://127.0.0.1:5000/api/calculate_hash", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    })
+    .then(res => {
+      setFileHashData(res.data);
+      setFileLoading(false);
+    })
+    .catch(err => {
+      setError("Hash calculation failed: " + (err.response?.data?.error || err.message));
+      setFileLoading(false);
+    });
   };
 
-  const handleAiAnalyze = async () => {
-    if (!scanData) return;
-    setAiLoading(true);
-    try {
-      const response = await axios.post(
-        "http://127.0.0.1:5000/api/ai_analyze",
-        {
-          target: target,
-          scan_data: scanData,
-        },
-      );
-      setAiReport(response.data.ai_report);
-      setSecurityScore(response.data.security_score);
-    } catch (err) {
-      console.error("AI Analysis Error", err);
-    } finally {
-      setAiLoading(false);
-    }
+  const handleAes = (action) => {
+    if (!aesInput) return;
+    const endpoint = action === 'encrypt' ? 'encrypt' : 'decrypt';
+    const payload = action === 'encrypt' ? { text: aesInput, key: aesKey } : { ciphertext: aesInput, key: aesKey };
+    axios.post(`http://127.0.0.1:5000/api/${endpoint}`, payload)
+      .then(res => setAesResult(res.data.ciphertext || res.data.text))
+      .catch(err => setError(err.response?.data?.error || "AES operation failed"));
   };
 
-  // --- NEW: Polling Logic ---
+  const handleBase64 = (action) => {
+    if (!aesInput) return;
+    axios.post("http://127.0.0.1:5000/api/base64", { text: aesInput, action })
+      .then(res => setAesResult(res.data.result))
+      .catch(() => setError("Base64 operation failed"));
+  };
+
+  const handlePcapUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPcapLoading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    axios.post("http://127.0.0.1:5000/api/analyze_pcap", formData, { headers: { "Content-Type": "multipart/form-data" } })
+      .then(res => { setPcapData(res.data); setPcapLoading(false); })
+      .catch(err => { setError(err.response?.data?.error || "PCAP analysis failed"); setPcapLoading(false); });
+  };
+
   useEffect(() => {
     let interval;
     if (scanId && loading) {
-      interval = setInterval(async () => {
-        try {
-          const res = await axios.get(
-            `http://127.0.0.1:5000/api/scan_status/${scanId}`,
-          );
-          setScanMessage(res.data.message);
-
+      interval = setInterval(() => {
+        axios.get(`http://127.0.0.1:5000/api/scan_status/${scanId}`).then(res => {
+          setScanStatus(res.data.message);
           if (res.data.status === "completed") {
             setScanData(res.data.scan_data);
+            setReconData(res.data.recon);
+            setSslData(res.data.ssl);
+            setHealthData(res.data.health);
+            setGeoData(res.data.geo);
             setSubdomains(res.data.subdomains || []);
-            setIntegrityHash(res.data.integrity_hash);
             setLoading(false);
             setScanId(null);
             fetchHistory();
-            clearInterval(interval);
           } else if (res.data.status === "failed") {
-            setError(`Scan Failed: ${res.data.message}`);
+            setError(res.data.message);
             setLoading(false);
             setScanId(null);
-            clearInterval(interval);
           }
-        } catch (err) {
-          console.error("Polling error", err);
-        }
-      }, 2000); // Poll every 2 seconds
+        }).catch(() => { clearInterval(interval); setLoading(false); });
+      }, 2000);
     }
     return () => clearInterval(interval);
   }, [scanId, loading]);
 
-  const handleScan = async () => {
+  const handleScan = () => {
     if (!target) return;
-    setLoading(true);
-    setError(null);
-    setScanData(null);
-    setSubdomains([]); // Clear previous subdomains
-    setAiReport(null); // Reset AI report
-    setSecurityScore(null); // Reset Score
-    setIntegrityHash(null);
-    setScanMessage("Requesting scan...");
-
-    try {
-      const response = await axios.post("http://127.0.0.1:5000/api/scan", {
-        target: target,
-      });
-      setScanId(response.data.scan_id);
-    } catch (err) {
-      setError("Failed to initiate scan. Ensure Backend is running.");
-      setLoading(false);
-    }
+    setLoading(true); setScanData(null); setReconData(null); setAiReport(null); setError(null);
+    axios.post("http://127.0.0.1:5000/api/scan", { target, mode: scanMode }).then(res => setScanId(res.data.scan_id));
   };
 
-  const handleDownload = async () => {
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { role: "user", content: chatInput };
+    setChatMessages([...chatMessages, userMsg]);
+    const currentInput = chatInput;
+    setChatInput("");
+    axios.post("http://127.0.0.1:5000/api/chat", { message: currentInput, scan_context: { target, results: scanData } })
+      .then(res => setChatMessages(prev => [...prev, { role: "assistant", content: res.data.response }]));
+  };
+
+  const handleAiAnalyze = () => {
     if (!scanData) return;
-    try {
-      const response = await axios.post(
-        "http://127.0.0.1:5000/api/report",
-        {
-          target: target,
-          scan_data: scanData,
-          ai_report: aiReport,
-          subdomains: subdomains,
-        },
-        { responseType: "blob" },
-      );
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `Report_${target}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-    } catch (err) {
-      console.error("Download Error", err);
-    }
+    setAiLoading(true);
+    axios.post("http://127.0.0.1:5000/api/ai_analyze", { target, scan_data: scanData })
+      .then(res => { setAiReport(res.data.ai_report); setAiLoading(false); });
   };
 
-  // --- NEW: Handle Node Click ---
-  const onNodeClick = (event, node) => {
-    if (node.id.startsWith("port-")) {
-      const index = parseInt(node.id.split("-")[1]);
-      const vuln = scanData[index];
-      setSelectedVuln(vuln);
-      setPatchModalOpen(true);
-      setAiPatch(null); // Reset patch when selecting new vuln
-    }
-  };
+  const { nodes, edges } = (() => {
+    if (!scanData) return { nodes: [], edges: [] };
+    const baseNodes = [{ id: 't', type: 'custom', data: { label: '🎯 '+target.toUpperCase(), subtext: 'Primary Target', color: '#238636', borderColor: '#2ea043' }, position: { x: 400, y: 250 } }];
+    const baseEdges = [];
+    scanData.forEach((v, i) => {
+      const isCrit = v.risk_level.includes('CRITICAL');
+      const nid = `v-${i}`;
+      baseNodes.push({ id: nid, type: 'custom', data: { label: v.service.toUpperCase(), subtext: `Port ${v.port}`, color: isCrit ? '#da3633' : '#161b22', borderColor: isCrit ? '#f85149' : '#30363d', fullData: v }, position: { x: 100 + (i * 180), y: isCrit ? 80 : 420 } });
+      baseEdges.push({ id: `e-${i}`, source: 't', target: nid, animated: isCrit, style: { stroke: isCrit ? '#f85149' : '#30363d', strokeWidth: 2 } });
+    });
+    return { nodes: baseNodes, edges: baseEdges };
+  })();
 
-  // --- NEW: Generate Patch ---
-  const handleGeneratePatch = async (vuln) => {
-    setPatchLoading(true);
-    try {
-      const res = await axios.post("http://127.0.0.1:5000/api/generate_patch", {
-        vulnerability: vuln,
-      });
-      setAiPatch(res.data.patch);
-    } catch (err) {
-      console.error("Patch Generation Error", err);
-      setAiPatch("⚠️ Failed to generate patch.");
-    } finally {
-      setPatchLoading(false);
-    }
-  };
-
-  // Calculate Stats for the Charts
-  const riskStats = scanData
-    ? [
-        {
-          name: "Critical",
-          value: scanData.filter((i) => i.risk_level.includes("CRITICAL"))
-            .length,
-          color: "#da3633",
-        },
-        {
-          name: "High",
-          value: scanData.filter((i) => i.risk_level.includes("High")).length,
-          color: "#bc8c00",
-        },
-        {
-          name: "Low",
-          value: scanData.filter((i) => i.risk_level === "Low").length,
-          color: "#238636",
-        },
-      ].filter((item) => item.value > 0)
-    : [];
+  const riskStats = scanData ? [
+    { name: "Critical", value: scanData.filter(i => i.risk_level.includes("CRITICAL")).length, color: "#f85149" },
+    { name: "High", value: scanData.filter(i => i.risk_level.includes("High")).length, color: "#d29922" },
+    { name: "Safe", value: scanData.filter(i => !i.risk_level.includes("High") && !i.risk_level.includes("CRITICAL")).length, color: "#238636" },
+  ].filter(i => i.value > 0) : [];
 
   return (
     <div className="dashboard-container">
-      {/* Navbar */}
-      <header className="navbar">
-        <div className="logo">
-          <ShieldAlert size={32} color="#00ff41" />
-          <h1>
-            VaptAI <span className="beta">v2.0</span>
-          </h1>
+      <nav className="navbar">
+        <div className="logo-section">
+          <ShieldAlert size={28} color="#00ff41" />
+          <h1>VAPTAI COMMAND</h1>
+          <span className="beta-tag">ULTIMATE</span>
         </div>
-        <div className="status">
-          <Activity size={18} color="#00ff41" />
-          <span>DB CONNECTED</span>
+        <div className="status-badge">
+          <Activity size={14} className={loading ? "spin" : ""} />
+          <span>{loading ? "ACTIVE SCAN" : "SYSTEM STANDBY"}</span>
         </div>
-      </header>
+      </nav>
 
       <div className="main-layout">
-        {/* SIDEBAR: HISTORY */}
-        <aside className="history-panel">
-          <h3>
-            <History size={18} /> Recent Scans
-          </h3>
-          {history.length === 0 ? (
-            <p className="empty-text">No scans yet.</p>
-          ) : (
-            <ul>
-              {history.map((h) => (
-                <li key={h.id} className="history-item">
-                  <strong>{h.target}</strong>
-                  <span>{h.timestamp}</span>
-                  <span className="vuln-badge">{h.vuln_count} Assets</span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <aside className="sidebar">
+          <h3><History size={14} /> Audit History</h3>
+          <div className="history-list">
+            {history.map(h => (
+              <div key={h.id} className="history-card" onClick={() => { setTarget(h.target); setActiveTab('vulnerabilities'); handleScan(); }}>
+                <strong>{h.target}</strong>
+                <span>{h.timestamp}</span>
+              </div>
+            ))}
+          </div>
         </aside>
 
-        {/* MAIN CONTENT */}
-        <div className="scanner-section">
-          <div className="input-group">
-            <Search className="search-icon" size={20} />
-            <input
-              type="text"
-              placeholder="Target Domain (e.g. scanme.nmap.org)"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              disabled={loading}
-            />
-            <button onClick={handleScan} disabled={loading}>
-              {loading ? "SCANNING..." : "START SCAN"}
+        <main className="content-area">
+          <div className="search-container">
+            <Search size={20} color="#8b949e" />
+            <input placeholder="Assign target (domain/IP)..." value={target} onChange={e => { setTarget(e.target.value); if (activeTab === 'cryptography') setActiveTab('vulnerabilities'); }} disabled={loading} />
+            <div className="mode-toggle">
+              <button onClick={() => setScanMode('quick')} className={`mode-btn ${scanMode === 'quick' ? 'active' : ''}`}>QUICK</button>
+              <button onClick={() => setScanMode('full')} className={`mode-btn ${scanMode === 'full' ? 'active' : ''}`}>DEEP</button>
+            </div>
+            <button onClick={handleScan} disabled={loading} className="launch-btn" style={{ marginRight: '10px' }}>PROBE</button>
+            <button onClick={() => setActiveTab('cryptography')} className={`tool-btn-dashboard ${activeTab === 'cryptography' ? 'active' : ''}`} title="Security Tools">
+              <Shield size={18} />
             </button>
           </div>
 
-          {error && <div className="error-card">{error}</div>}
+          {loading && <div className="loading-animation"><div className="spinner"></div><p className="neon-text">{scanStatus}</p></div>}
 
-          {loading && (
-            <div className="loading-animation">
-              <div className="spinner"></div>
-              <p>{scanMessage || "Enumerating Attack Surface..."}</p>
-            </div>
-          )}
+          {(scanData || activeTab === 'cryptography') && (
+            <div className="report-frame">
+              {scanData && (
+                <div className="hud-container">
+                  <div className="hud-item"><label><MapPin size={12}/> Location</label><span>{geoData?.city}, {geoData?.country}</span></div>
+                  <div className="hud-item"><label><Activity size={12}/> Latency</label><span>{healthData?.latency_ms} ms</span></div>
+                  <div className="hud-item"><label><ShieldCheck size={12}/> Security</label><span style={{ color: healthData?.security_grade === 'A' ? '#7ee787' : '#f85149' }}>Grade {healthData?.security_grade}</span></div>
+                  <div className="hud-item"><label><Zap size={12}/> Threats</label><span>{scanData.filter(i => i.risk_level.includes("CRITICAL")).length} Critical</span></div>
+                </div>
+              )}
 
-          {scanData && (
-            <div className="report-card">
-              <div className="report-header">
-                {/* --- NEW: Wrapped Title and Hash in a Div --- */}
-                <div>
-                  <h2>
-                    <Server size={20} /> Results: {target}
-                  </h2>
+              <div className="tab-bar">
+                {scanData && <button onClick={() => setActiveTab('vulnerabilities')} className={`tab-item ${activeTab === 'vulnerabilities' ? 'active' : ''}`}>Findings</button>}
+                {scanData && <button onClick={() => setActiveTab('infrastructure')} className={`tab-item ${activeTab === 'infrastructure' ? 'active' : ''}`}>Infrastructure</button>}
+                {scanData && <button onClick={() => setActiveTab('ai')} className={`tab-item ${activeTab === 'ai' ? 'active' : ''}`}>AI Intelligence</button>}
+                <button onClick={() => setActiveTab('cryptography')} className={`tab-item ${activeTab === 'cryptography' ? 'active' : ''}`}>Security Tools</button>
+              </div>
 
-                  {/* --- NEW: Forensic Integrity Badge --- */}
-                  {integrityHash && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        fontSize: "0.8rem",
-                        color: "#8b949e",
-                        marginTop: "5px",
-                        fontFamily: "monospace",
-                        background: "#0d1117",
-                        padding: "5px 10px",
-                        borderRadius: "4px",
-                        border: "1px solid #30363d",
-                        width: "fit-content",
-                      }}
-                    >
-                      <Hash size={14} color="#a5d6ff" />
-                      <span>
-                        EVIDENCE HASH (SHA256): {integrityHash.substring(0, 20)}
-                        ...
-                      </span>
+              {activeTab === 'vulnerabilities' && scanData && (
+                <>
+                  <div className="topology-view" style={{ marginBottom: '30px' }}>
+                    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodeClick={(e, n) => setSelectedNodeInfo(n.data.fullData)} fitView>
+                      <Background color="#111" gap={20} variant="dots" />
+                      <Controls />
+                    </ReactFlow>
+                    {selectedNodeInfo && (
+                      <div className="node-popover">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                          <h4 style={{ margin: 0, color: '#58a6ff' }}>{selectedNodeInfo.service.toUpperCase()}</h4>
+                          <X size={18} onClick={() => setSelectedNodeInfo(null)} style={{ cursor: 'pointer' }} />
+                        </div>
+                        <p style={{ fontSize: '0.75rem' }}><strong>Remediation:</strong> {selectedNodeInfo.remediation}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="glass-card full-width">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle color="#f85149"/> Detailed Vulnerability Inventory</h3>
+                    <table>
+                      <thead>
+                        <tr><th>Port</th><th>Service</th><th>Risk Level</th><th>Remediation Advice</th></tr>
+                      </thead>
+                      <tbody>
+                        {scanData.map((item, i) => (
+                          <tr key={i}>
+                            <td className="mono">{item.port}</td>
+                            <td className="service-tag">{item.service}</td>
+                            <td className={item.risk_level.includes("CRITICAL") ? "risk-critical" : "risk-low"}>{item.risk_level}</td>
+                            <td style={{ fontSize: '0.8rem', color: '#8b949e' }}>{item.remediation}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'infrastructure' && (
+                <div className="infra-layout">
+                  <div className="hud-container" style={{ marginBottom: '20px' }}>
+                    <div className="hud-item"><label>ISP</label><span>{geoData?.isp || 'Unknown'}</span></div>
+                    <div className="hud-item"><label>Server Engine</label><span>{reconData?.tech?.server || 'Hidden'}</span></div>
+                    <div className="hud-item"><label>SSL Issuer</label><span>{sslData?.issuer || 'N/A'}</span></div>
+                    <div className="hud-item"><label>Days to Expiry</label><span>{sslData?.days_remaining} Days</span></div>
+                  </div>
+
+                  <div className="info-grid">
+                    <div className="glass-card">
+                      <h4><Database size={18} /> WHOIS Records</h4>
+                      <div className="intel-list">
+                        <p><Calendar size={12}/> <strong>Created:</strong> {reconData?.whois?.creation_date}</p>
+                        <p><Calendar size={12}/> <strong>Expires:</strong> {reconData?.whois?.expiration_date}</p>
+                        <p><Mail size={12}/> <strong>Registrar:</strong> {reconData?.whois?.registrar}</p>
+                        <p><Globe size={12}/> <strong>Organization:</strong> {reconData?.whois?.org}</p>
+                      </div>
+                    </div>
+                    <div className="glass-card">
+                      <h4><Hash size={18} /> DNS Mapping</h4>
+                      <div className="intel-list">
+                        {Object.entries(reconData?.dns || {}).map(([k,v]) => (
+                          <p key={k}><strong>{k}:</strong> {v.join(', ') || 'N/A'}</p>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="glass-card">
+                      <h4><Shield size={18} /> Header Security (Missing)</h4>
+                      <div className="intel-list">
+                        {healthData?.missing_headers?.map(mh => (
+                          <p key={mh} style={{ color: '#f85149' }}>✖ {mh}</p>
+                        )) || <p style={{ color: '#7ee787' }}>✔ All core headers present</p>}
+                      </div>
+                    </div>
+                    <div className="glass-card">
+                      <h4><Zap size={18} /> Discovered Subdomains</h4>
+                      <div className="intel-list scrollable">
+                        {subdomains.map(s => <p key={s.subdomain}>🌐 {s.subdomain} <span style={{ color: '#8b949e' }}>({s.ip})</span></p>)}
+                        {subdomains.length === 0 && <p>No subdomains found.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'ai' && scanData && (
+                <div className="ai-report-frame">
+                  {!aiReport ? (
+                    <div style={{ textAlign: 'center', padding: '60px' }}>
+                      <Zap size={48} color="#d29922" style={{ marginBottom: '20px' }} />
+                      <button onClick={handleAiAnalyze} disabled={aiLoading} className="launch-btn">GENERATE AI ANALYSIS</button>
+                    </div>
+                  ) : (
+                    <div className="ai-glass-panel" style={{ whiteSpace: 'pre-wrap' }}>{aiReport}</div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'cryptography' && (
+                <div className="crypto-layout">
+                  <div className="tab-bar" style={{ marginBottom: '25px', borderBottom: 'none' }}>
+                    <button onClick={() => setCryptoSubTab('integrity')} className={`tab-item ${cryptoSubTab === 'integrity' ? 'active' : ''}`} style={{ fontSize: '0.8rem' }}>
+                      <Lock size={14} style={{ marginRight: '8px' }}/> Integrity
+                    </button>
+                    <button onClick={() => setCryptoSubTab('encryption')} className={`tab-item ${cryptoSubTab === 'encryption' ? 'active' : ''}`} style={{ fontSize: '0.8rem' }}>
+                      <Zap size={14} style={{ marginRight: '8px' }}/> Encryption/AES
+                    </button>
+                    <button onClick={() => setCryptoSubTab('packet')} className={`tab-item ${cryptoSubTab === 'packet' ? 'active' : ''}`} style={{ fontSize: '0.8rem' }}>
+                      <Activity size={14} style={{ marginRight: '8px' }}/> Packet Analyzer
+                    </button>
+                  </div>
+
+                  {cryptoSubTab === 'integrity' && (
+                    <div className="glass-card full-width">
+                      <div style={{ textAlign: 'center', padding: '40px' }}>
+                        <Lock size={48} color="#00ff41" style={{ marginBottom: '20px' }} />
+                        <h2>File Integrity Checker</h2>
+                        <p style={{ color: '#8b949e', marginBottom: '30px' }}>Calculate cryptographic fingerprints (MD5, SHA-1, SHA-256) to ensure file authenticity.</p>
+                        <div className="file-upload-zone">
+                          <input type="file" id="file-input" onChange={handleFileHash} style={{ display: 'none' }} />
+                          <label htmlFor="file-input" className="launch-btn" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                            <FileText size={18} /> {fileLoading ? "Calculating..." : "Upload for Hashing"}
+                          </label>
+                        </div>
+                      </div>
+                      {fileHashData && (
+                        <div className="hash-results-container">
+                          <div className="hash-item"><label>SHA-256</label><div className="hash-value mono">{fileHashData.sha256}</div></div>
+                          <div className="hash-item"><label>MD5</label><div className="hash-value mono">{fileHashData.md5}</div></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {cryptoSubTab === 'encryption' && (
+                    <div className="glass-card full-width">
+                      <div style={{ padding: '20px' }}>
+                        <h2>AES-256 Symmetric Encryption</h2>
+                        <p style={{ color: '#8b949e' }}>Securely encrypt or decrypt text using the industry-standard AES algorithm.</p>
+                        
+                        <div style={{ marginTop: '20px' }}>
+                          <textarea className="glass-input" placeholder="Enter text to encrypt/decrypt..." value={aesInput} onChange={e => setAesInput(e.target.value)} rows={4} style={{ width: '100%', marginBottom: '15px' }} />
+                          <input className="glass-input" placeholder="Secret Key (Optional)..." value={aesKey} onChange={e => setAesKey(e.target.value)} style={{ width: '100%', marginBottom: '15px' }} />
+                          
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => handleAes('encrypt')} className="launch-btn" style={{ background: '#58a6ff' }}>ENCRYPT AES</button>
+                            <button onClick={() => handleAes('decrypt')} className="launch-btn" style={{ background: '#238636' }}>DECRYPT AES</button>
+                            <button onClick={() => handleBase64('encode')} className="launch-btn" style={{ background: '#d29922' }}>B64 ENCODE</button>
+                            <button onClick={() => handleBase64('decode')} className="launch-btn" style={{ background: '#d29922' }}>B64 DECODE</button>
+                          </div>
+                        </div>
+
+                        {aesResult && (
+                          <div className="hash-results-container" style={{ marginTop: '25px' }}>
+                            <label style={{ fontSize: '0.7rem', color: '#8b949e' }}>RESULT</label>
+                            <div className="hash-value mono" style={{ marginTop: '10px', color: '#fff' }}>{aesResult}</div>
+                            <button className="copy-btn" onClick={() => navigator.clipboard.writeText(aesResult)} style={{ marginTop: '10px' }}>COPY RESULT</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {cryptoSubTab === 'packet' && (
+                    <div className="glass-card full-width">
+                      <div style={{ textAlign: 'center', padding: '40px' }}>
+                        <Activity size={48} color="#f85149" style={{ marginBottom: '20px' }} />
+                        <h2>Packet Inspector (Wireshark-lite)</h2>
+                        <p style={{ color: '#8b949e', marginBottom: '30px' }}>Upload a .pcap or .pcapng file to perform deep packet inspection and traffic analysis.</p>
+                        <div className="file-upload-zone">
+                          <input type="file" id="pcap-input" onChange={handlePcapUpload} style={{ display: 'none' }} />
+                          <label htmlFor="pcap-input" className="launch-btn" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', background: '#f85149' }}>
+                            <Search size={18} /> {pcapLoading ? "Parsing PCAP..." : "Select PCAP File"}
+                          </label>
+                        </div>
+                      </div>
+
+                      {pcapData && (
+                        <div className="pcap-results" style={{ marginTop: '20px' }}>
+                          <h4>Captured Traffic Summary ({pcapData.count} Packets)</h4>
+                          <div className="scrollable" style={{ maxHeight: '400px' }}>
+                            <table>
+                              <thead>
+                                <tr><th>ID</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Length</th></tr>
+                              </thead>
+                              <tbody>
+                                {pcapData.packets.map(p => (
+                                  <tr key={p.id}>
+                                    <td>{p.id}</td>
+                                    <td className="mono" style={{ color: '#58a6ff' }}>{p.src}</td>
+                                    <td className="mono" style={{ color: '#7ee787' }}>{p.dst}</td>
+                                    <td className="service-tag">{p.proto}</td>
+                                    <td>{p.len}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-
-                <button onClick={handleDownload} className="btn-download">
-                  <FileText size={16} /> PDF Report
-                </button>
-              </div>
-
-              <div
-                className="analytics-dashboard"
-                style={{ display: "flex", gap: "20px", marginBottom: "30px" }}
-              >
-                {/* Card 1: Risk Distribution Chart */}
-                <div
-                  className="chart-card"
-                  style={{
-                    flex: 1,
-                    background: "#161b22",
-                    padding: "20px",
-                    borderRadius: "12px",
-                    border: "1px solid #30363d",
-                  }}
-                >
-                  <h3 style={{ marginTop: 0 }}>
-                    🛡️ Vulnerability Distribution
-                  </h3>
-                  <div style={{ height: "250px" }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={riskStats}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                        >
-                          {riskStats.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#0d1117",
-                            border: "1px solid #30363d",
-                          }}
-                        />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Card 2: Executive Summary */}
-                <div
-                  className="summary-card"
-                  style={{
-                    flex: 1,
-                    background: "#161b22",
-                    padding: "20px",
-                    borderRadius: "12px",
-                    border: "1px solid #30363d",
-                  }}
-                >
-                  <h3 style={{ marginTop: 0 }}>📊 Executive Summary</h3>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: "15px",
-                    }}
-                  >
-                    <div className="stat-box">
-                      <span style={{ color: "#8b949e" }}>Total Assets</span>
-                      <h2 style={{ fontSize: "2rem", margin: "5px 0" }}>
-                        {scanData.length}
-                      </h2>
-                    </div>
-                    <div className="stat-box">
-                      <span style={{ color: "#da3633" }}>Critical Threats</span>
-                      <h2
-                        style={{
-                          fontSize: "2rem",
-                          margin: "5px 0",
-                          color: "#da3633",
-                        }}
-                      >
-                        {
-                          scanData.filter((i) =>
-                            i.risk_level.includes("CRITICAL"),
-                          ).length
-                        }
-                      </h2>
-                    </div>
-                    <div className="stat-box">
-                      <span style={{ color: "#8b949e" }}>Security Score</span>
-                      <h2
-                        style={{
-                          fontSize: "2rem",
-                          margin: "5px 0",
-                          color:
-                            securityScore !== null
-                              ? securityScore > 80
-                                ? "#2ea043"
-                                : securityScore > 50
-                                  ? "#bc8c00"
-                                  : "#da3633"
-                              : "#2ea043",
-                        }}
-                      >
-                        {securityScore !== null
-                          ? securityScore
-                          : Math.max(
-                              0,
-                              100 -
-                                scanData.filter((i) =>
-                                  i.risk_level.includes("CRITICAL"),
-                                ).length *
-                                  20,
-                            )}
-                      </h2>
-                      {securityScore !== null && (
-                        <span style={{ fontSize: "0.7rem", color: "#8b949e" }}>
-                          AI CALCULATED
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* --- REFINED: Interactive Topology Map --- */}
-              <div
-                className="topology-section"
-                style={{
-                  background: "#161b22",
-                  padding: "20px",
-                  borderRadius: "12px",
-                  border: "1px solid #30363d",
-                  marginBottom: "30px",
-                  height: "500px",
-                }}
-              >
-                <h3
-                  style={{
-                    marginTop: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                  }}
-                >
-                  🕸️ Network Infrastructure Topology
-                  <span
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "#8b949e",
-                      fontWeight: "normal",
-                    }}
-                  >
-                    (Interactive Graph)
-                  </span>
-                </h3>
-                <div
-                  style={{
-                    width: "100%",
-                    height: "420px",
-                    background: "#0d1117",
-                    borderRadius: "8px",
-                    border: "1px solid #21262d",
-                  }}
-                >
-                  <ReactFlow
-                    nodes={[
-                      {
-                        id: "target",
-                        data: { label: `🎯 ${target || "Target"}` },
-                        position: { x: 400, y: 200 },
-                        style: {
-                          background: "#238636",
-                          color: "#fff",
-                          border: "2px solid #2ea043",
-                          borderRadius: "8px",
-                          padding: "10px",
-                          fontWeight: "bold",
-                          width: 180,
-                        },
-                      },
-                      ...(subdomains || []).map((sub, i) => ({
-                        id: `sub-${i}`,
-                        data: { label: `🌐 ${sub.subdomain}` },
-                        position: { x: 100 + i * 200, y: 50 },
-                        style: {
-                          background: "#1f6feb",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: "6px",
-                          fontSize: "0.75rem",
-                          width: 150,
-                        },
-                      })),
-                      ...(scanData || []).map((port, i) => {
-                        const isCritical =
-                          port.risk_level.includes("CRITICAL") ||
-                          port.risk_level.includes("Nuclei: CRITICAL");
-                        const isHigh =
-                          port.risk_level.includes("High") ||
-                          port.risk_level.includes("Nuclei: HIGH");
-                        return {
-                          id: `port-${i}`,
-                          data: {
-                            label: `🔌 Port ${port.port}\n(${port.service})`,
-                          },
-                          position: { x: 50 + i * 130, y: 350 },
-                          style: {
-                            background: isCritical
-                              ? "#da3633"
-                              : isHigh
-                                ? "#bc8c00"
-                                : "#30363d",
-                            color: "#fff",
-                            border: isCritical ? "2px solid #ff7b72" : "none",
-                            borderRadius: "4px",
-                            fontSize: "0.65rem",
-                            width: 110,
-                            whiteSpace: "pre-wrap",
-                            cursor: "pointer",
-                          },
-                        };
-                      }),
-                    ]}
-                    edges={[
-                      ...(subdomains || []).map((_, i) => ({
-                        id: `e-target-sub-${i}`,
-                        source: "target",
-                        target: `sub-${i}`,
-                        animated: true,
-                        label: "subdomain",
-                        labelStyle: { fill: "#8b949e", fontSize: "0.6rem" },
-                        style: { stroke: "#1f6feb", strokeWidth: 2 },
-                      })),
-                      ...(scanData || []).map((_, i) => ({
-                        id: `e-target-port-${i}`,
-                        source: "target",
-                        target: `port-${i}`,
-                        animated: false,
-                        style: { stroke: "#30363d", strokeWidth: 1 },
-                      })),
-                    ]}
-                    onNodeClick={onNodeClick}
-                    fitView
-                  >
-                    <Background color="#161b22" gap={20} variant="dots" />
-                    <Controls />
-                  </ReactFlow>
-                </div>
-              </div>
-
-              {/* --- NEW: Subdomains Section --- */}
-              {subdomains.length > 0 && (
-                <div
-                  className="subdomain-section"
-                  style={{
-                    background: "#161b22",
-                    padding: "20px",
-                    borderRadius: "12px",
-                    border: "1px solid #30363d",
-                    marginBottom: "30px",
-                  }}
-                >
-                  <h3
-                    style={{
-                      marginTop: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    🌐 Discovered Subdomains
-                    <span
-                      style={{
-                        fontSize: "0.8rem",
-                        background: "#238636",
-                        padding: "2px 8px",
-                        borderRadius: "10px",
-                      }}
-                    >
-                      {subdomains.length} Found
-                    </span>
-                  </h3>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fill, minmax(200px, 1fr))",
-                      gap: "10px",
-                      marginTop: "15px",
-                    }}
-                  >
-                    {subdomains.map((sub, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          background: "#0d1117",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          border: "1px solid #30363d",
-                          fontSize: "0.85rem",
-                        }}
-                      >
-                        <div style={{ color: "#58a6ff", fontWeight: "bold" }}>
-                          {sub.subdomain}
-                        </div>
-                        <div
-                          style={{
-                            color: "#8b949e",
-                            fontSize: "0.75rem",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          {sub.ip}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
-
-              {/* --- NEW: AI Analysis Section --- */}
-              <div
-                className="ai-section"
-                style={{
-                  background: "#0d1117",
-                  padding: "20px",
-                  borderRadius: "12px",
-                  border: "1px solid #238636",
-                  marginBottom: "30px",
-                  position: "relative",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "15px",
-                  }}
-                >
-                  <h3 style={{ margin: 0, color: "#238636" }}>
-                    🧠 VaptAI Security Insights
-                  </h3>
-                  <button
-                    onClick={handleAiAnalyze}
-                    disabled={aiLoading || aiReport}
-                    className="btn-ai"
-                    style={{
-                      background: aiReport ? "#30363d" : "#238636",
-                      color: "white",
-                      border: "none",
-                      padding: "8px 15px",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    {aiLoading
-                      ? "Generating..."
-                      : aiReport
-                        ? "Report Ready"
-                        : "Generate AI Report"}
-                  </button>
-                </div>
-
-                {aiLoading && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      color: "#8b949e",
-                    }}
-                  >
-                    <div className="spinner-small"></div>
-                    <span>Gemini is analyzing attack vectors...</span>
-                  </div>
-                )}
-
-                {aiReport && (
-                  <div
-                    className="ai-report-content"
-                    style={{
-                      color: "#c9d1d9",
-                      fontSize: "0.95rem",
-                      lineHeight: "1.6",
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
-                    {aiReport}
-                  </div>
-                )}
-              </div>
-
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>PORT</th>
-                      <th>SERVICE</th>
-                      <th>VERSION</th>
-                      <th>RISK</th>
-                      <th>ACTION</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scanData.map((item, index) => (
-                      <tr key={index}>
-                        <td className="mono">{item.port}</td>
-                        <td className="service-tag">{item.service}</td>
-                        <td className="mono">{item.version || "Unknown"}</td>
-                        <td
-                          className={
-                            item.risk_level.includes("CRITICAL")
-                              ? "risk-critical"
-                              : "risk-low"
-                          }
-                        >
-                          {item.risk_level.includes("CRITICAL") ? (
-                            <Lock size={14} />
-                          ) : null}
-                          {item.risk_level}
-                        </td>
-                        <td>
-                          <button
-                            className="btn-patch"
-                            onClick={() => {
-                              setSelectedVuln(item);
-                              setPatchModalOpen(true);
-                              handleGeneratePatch(item);
-                            }}
-                            style={{
-                              padding: "4px 8px",
-                              fontSize: "0.75rem",
-                              background: "#238636",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Generate Patch
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
 
-      {/* --- NEW: SecureChat Floating Widget --- */}
-      <div
-        className={`chat-widget ${chatOpen ? "open" : ""}`}
-        style={{
-          position: "fixed",
-          bottom: "30px",
-          right: "30px",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-        }}
-      >
+      {/* CHAT WIDGET */}
+      <div className={`chat-container ${chatOpen ? 'open' : ''}`}>
         {chatOpen && (
-          <div
-            className="chat-window"
-            style={{
-              width: "350px",
-              height: "450px",
-              background: "#161b22",
-              border: "1px solid #30363d",
-              borderRadius: "12px",
-              marginBottom: "15px",
-              display: "flex",
-              flexDirection: "column",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              className="chat-header"
-              style={{
-                padding: "15px",
-                background: "#0d1117",
-                borderBottom: "1px solid #30363d",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontWeight: "bold", color: "#00ff41" }}>
-                🛡️ VaptAI Assistant
-              </span>
-              <button
-                onClick={() => setChatOpen(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#8b949e",
-                  cursor: "pointer",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div
-              className="chat-messages"
-              style={{
-                flex: 1,
-                padding: "15px",
-                overflowY: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-              }}
-            >
-              {chatMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                    background: msg.role === "user" ? "#1f6feb" : "#21262d",
-                    padding: "8px 12px",
-                    borderRadius: "12px",
-                    maxWidth: "85%",
-                    fontSize: "0.85rem",
-                    color: "#fff",
-                  }}
-                >
-                  {msg.content}
-                </div>
-              ))}
-              {chatLoading && (
-                <div
-                  className="spinner-small"
-                  style={{ margin: "0 auto" }}
-                ></div>
-              )}
+          <div className="chat-box">
+            <div className="chat-head"><span>AI FIELD AGENT</span> <X size={18} onClick={() => setChatOpen(false)} style={{ cursor: 'pointer' }} /></div>
+            <div className="chat-body">
+              {chatMessages.map((m, i) => <div key={i} className={`message ${m.role}`}>{m.content}</div>)}
               <div ref={chatEndRef} />
             </div>
-
-            <div
-              className="chat-input-area"
-              style={{
-                padding: "15px",
-                borderTop: "1px solid #30363d",
-                display: "flex",
-                gap: "10px",
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Ask about vulnerabilities..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #30363d",
-                  padding: "8px",
-                  borderRadius: "4px",
-                  flex: 1,
-                  color: "#fff",
-                }}
-              />
-              <button
-                onClick={handleSendMessage}
-                style={{
-                  padding: "8px 12px",
-                  background: "#238636",
-                  borderRadius: "4px",
-                }}
-              >
-                ➤
-              </button>
+            <div className="chat-foot">
+              <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSendMessage()} placeholder="Ask intel..." />
+              <button onClick={handleSendMessage} className="launch-btn"><Send size={16} /></button>
             </div>
           </div>
         )}
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          className="chat-toggle-btn"
-          style={{
-            width: "60px",
-            height: "60px",
-            borderRadius: "50%",
-            background: "#238636",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-            cursor: "pointer",
-            border: "none",
-            transition: "transform 0.2s",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.transform = "scale(1.1)")}
-          onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1)")}
-        >
-          <Activity size={28} color="#fff" />
-        </button>
+        {!chatOpen && <div className="chat-bubble" onClick={() => setChatOpen(true)}><Activity size={28} color="#fff" /></div>}
       </div>
-
-      {/* --- NEW: Auto-Patch Modal --- */}
-      {patchModalOpen && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0,0,0,0.8)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-          }}
-          onClick={() => setPatchModalOpen(false)}
-        >
-          <div
-            className="modal-content"
-            style={{
-              background: "#161b22",
-              width: "80%",
-              maxWidth: "800px",
-              maxHeight: "80vh",
-              borderRadius: "12px",
-              border: "1px solid #30363d",
-              padding: "25px",
-              overflowY: "auto",
-              position: "relative",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "20px",
-                borderBottom: "1px solid #30363d",
-                paddingBottom: "15px",
-              }}
-            >
-              <h2 style={{ margin: 0, color: "#2ea043" }}>
-                🛠️ AI Remediation Patch
-              </h2>
-              <button
-                onClick={() => setPatchModalOpen(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#8b949e",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {selectedVuln && (
-              <div
-                style={{
-                  background: "#0d1117",
-                  padding: "15px",
-                  borderRadius: "8px",
-                  border: "1px solid #21262d",
-                  marginBottom: "20px",
-                }}
-              >
-                <div style={{ fontSize: "0.9rem", color: "#8b949e" }}>
-                  Targeting Vulnerability:
-                </div>
-                <div style={{ fontWeight: "bold", color: "#f85149" }}>
-                  Port {selectedVuln.port} - {selectedVuln.service} (
-                  {selectedVuln.risk_level})
-                </div>
-              </div>
-            )}
-
-            {!aiPatch && !patchLoading && (
-              <div style={{ textAlign: "center", padding: "40px" }}>
-                <button
-                  onClick={() => handleGeneratePatch(selectedVuln)}
-                  style={{
-                    padding: "12px 24px",
-                    background: "#238636",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    fontSize: "1rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Generate Code-Level Patch
-                </button>
-              </div>
-            )}
-
-            {patchLoading && (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "40px",
-                  color: "#8b949e",
-                }}
-              >
-                <div
-                  className="spinner"
-                  style={{ margin: "0 auto 15px" }}
-                ></div>
-                <p>AI is crafting your security patch...</p>
-              </div>
-            )}
-
-            {aiPatch && (
-              <div
-                className="patch-content"
-                style={{
-                  color: "#c9d1d9",
-                  fontSize: "0.95rem",
-                  lineHeight: "1.6",
-                  whiteSpace: "pre-wrap",
-                  background: "#0d1117",
-                  padding: "20px",
-                  borderRadius: "8px",
-                  border: "1px solid #30363d",
-                  fontFamily: "monospace",
-                }}
-              >
-                {aiPatch}
-                <div style={{ marginTop: "20px", textAlign: "right" }}>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(aiPatch);
-                      alert("Patch copied to clipboard!");
-                    }}
-                    style={{
-                      padding: "8px 15px",
-                      background: "#1f6feb",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copy to Clipboard
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

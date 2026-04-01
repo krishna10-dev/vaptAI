@@ -13,9 +13,9 @@ class VulnerabilityScanner:
         # Common Subdomain List
         self.common_subdomains = ["www", "mail", "ftp", "localhost", "webmail", "smtp", "pop", "ns1", "web", "ns2", "api", "dev", "test", "stage", "blog", "shop", "admin", "vpn", "secure", "proxy"]
 
-    def run_nuclei(self, target):
-        """ Runs Nuclei scanner if installed on the system """
-        print(f"[*] Starting Deep Vulnerability Scan with Nuclei: {target}")
+    def run_nuclei(self, target, templates="cves,default-logins,exposed-panels,vulnerabilities"):
+        """ Runs Nuclei scanner with AI-suggested templates """
+        print(f"[*] Starting Deep Vulnerability Scan with Nuclei: {target} using templates: {templates}")
         
         # Ensure target is just the host for Nuclei
         host = target.replace("http://", "").replace("https://", "").split("/")[0]
@@ -24,11 +24,8 @@ class VulnerabilityScanner:
             # Check if nuclei is installed by running version check
             subprocess.run(["nuclei", "--version"], capture_output=True, check=True)
             
-            # --- OPTIMIZED NUCLEI SCAN ---
-            # -t: specify templates (cves, default-logins, exposed-panels, vulnerabilities)
-            # -severity: only show medium, high, and critical
             process = subprocess.run(
-                ["nuclei", "-u", host, "-jsonl", "-silent", "-nc", "-t", "cves,default-logins,exposed-panels,vulnerabilities", "-severity", "medium,high,critical"],
+                ["nuclei", "-u", host, "-jsonl", "-silent", "-nc", "-t", templates, "-severity", "medium,high,critical"],
                 capture_output=True,
                 text=True,
                 timeout=300
@@ -120,13 +117,11 @@ class VulnerabilityScanner:
         
         return findings
 
-    def scan_target(self, target):
-        print(f"[*] Starting Deep Vulnerability Scan on: {target}")
+    def scan_target(self, target, arguments='-sV --script vuln -T4'):
+        print(f"[*] Starting Deep Vulnerability Scan on: {target} with args: {arguments}")
         
         try:
-            # -sV: Service Version, --script vuln: Vuln Scripts, -T4: Fast
-            # Note: --script vuln can be slow. Remove it if you want speed over depth.
-            self.nm.scan(target, arguments='-sV --script vuln -T4')
+            self.nm.scan(target, arguments=arguments)
             scan_results = []
             
             for host in self.nm.all_hosts():
