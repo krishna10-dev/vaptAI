@@ -38,7 +38,7 @@ def get_ai_analysis(target, scan_results):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         # Sort and limit to send most relevant data
-        filtered_results = sorted(scan_results, key=lambda x: str(x.get('risk_level')), reverse=True)[:15]
+        filtered_results = sorted(scan_results, key=lambda x: str(x.get('risk_level', 'Low')), reverse=True)[:15]
         
         prompt = f"""As a Senior Security Analyst, analyze these VAPT results for target '{target}'.
         Findings: {json.dumps(filtered_results)}
@@ -50,10 +50,10 @@ def get_ai_analysis(target, scan_results):
         
         Keep it professional and technical."""
 
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response = client.models.generate_content(model="gemini-3-flash-preview", contents=prompt)
         
         # Estimate a score based on results
-        criticals = len([r for r in scan_results if "CRITICAL" in str(r.get('risk_level')).upper()])
+        criticals = len([r for r in scan_results if "CRITICAL" in str(r.get('risk_level', '')).upper()])
         score = max(0, 100 - (criticals * 25))
 
         return {
@@ -64,17 +64,35 @@ def get_ai_analysis(target, scan_results):
         print(f"⚠️ AI Analysis Failed: {e}")
         return get_offline_report(target, scan_results)
 
+def get_attack_suggestion(vuln):
+    """Generates a suggestion based on an attack/vulnerability."""
+    if not GENAI_AVAILABLE or not GEMINI_API_KEY:
+        return "Check service version and apply latest security patches."
+    
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        prompt = f"As a security expert, provide a one-sentence actionable suggestion to mitigate this vulnerability: {json.dumps(vuln)}. Be specific."
+        response = client.models.generate_content(model="gemini-3-flash-preview", contents=prompt)
+        return response.text.strip()
+    except:
+        return "Patch the service and restrict port access."
+
 def get_chat_response(message, scan_context):
     """Simple conversational assistant."""
     if not GENAI_AVAILABLE or not GEMINI_API_KEY:
         return "🤖 AI Assistant (Offline): I am unable to connect to Gemini. Please check your API key."
 
+    if scan_context is None:
+        scan_context = {}
+
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         target = scan_context.get('target', 'unknown')
         results = scan_context.get('results', [])
+        if results is None:
+            results = []
         
-        results_summary = [f"Port {r.get('port')}: {r.get('service')} ({r.get('risk_level')})" for r in results[:10]]
+        results_summary = [f"Port {r.get('port')}: {r.get('service')} ({r.get('risk_level')})" for r in results[:10] if r]
         
         prompt = f"""You are VaptAI, a helpful security assistant. 
         Context: The user is scanning {target}. 
@@ -84,7 +102,7 @@ def get_chat_response(message, scan_context):
         
         Answer professionally and suggest remediation if they ask about vulnerabilities."""
 
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response = client.models.generate_content(model="gemini-3-flash-preview", contents=prompt)
         return response.text
     except Exception as e:
         if "429" in str(e):
@@ -98,7 +116,7 @@ def get_ai_patch(vuln):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = f"Provide a technical code-level remediation patch or configuration fix for this vulnerability: {json.dumps(vuln)}. Include 'Fix' and 'Rationale'."
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response = client.models.generate_content(model="gemini-3-flash-preview", contents=prompt)
         return response.text
     except:
         return "Error generating AI patch. Refer to official vendor security bulletins."

@@ -14,7 +14,7 @@ from reportlab.pdfgen import canvas
 # Import custom modules
 from scanner import VulnerabilityScanner
 from remediation import get_remediation
-from ai_helper import get_ai_analysis, get_chat_response, get_ai_patch
+from ai_helper import get_ai_analysis, get_chat_response, get_ai_patch, get_attack_suggestion
 from recon_helper import get_whois_info, get_dns_records, get_ssl_details, get_tech_stack, get_geo_info, get_server_health
 import base64
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -91,6 +91,7 @@ def run_async_scan(scan_id, target, mode="quick"):
         # 4. Finalize
         for item in full_results:
             item['remediation'] = get_remediation(item['service'], item['port'], item['risk_level'])
+            item['ai_suggestion'] = get_attack_suggestion(item)
 
         scan_payload = {
             "target": target,
@@ -152,6 +153,11 @@ def get_history():
 def ai_analyze():
     data = request.json
     return jsonify(get_ai_analysis(data.get('target'), data.get('scan_data', [])))
+
+@app.route('/api/ai_patch', methods=['POST'])
+def ai_patch():
+    data = request.json
+    return jsonify({"patch": get_ai_patch(data.get('vuln', {}))})
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
