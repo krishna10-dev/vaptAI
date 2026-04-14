@@ -155,6 +155,18 @@ def run_async_scan(scan_id, target, mode="quick"):
 
 # --- API ENDPOINTS ---
 
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({
+        "service": "VaptAI Backend",
+        "status": "ok",
+        "hint": "Use /api/health or /api/history to test the API."
+    })
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"})
+
 @app.route('/api/scan', methods=['POST'])
 def start_scan():
     data = _json_body()
