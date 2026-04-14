@@ -131,11 +131,45 @@ curl http://127.0.0.1:5000/api/history
 - `POST /api/ai_patch` AI patch suggestions
 - `POST /api/report` PDF report generation
 
+## Free Deployment (Netlify + Render)
+
+This repo is pre-configured for:
+- Frontend on Netlify (`netlify.toml`)
+- Backend on Render (`render.yaml`)
+
+### 1. Deploy Backend on Render (Free)
+
+1. Push this repo to GitHub.
+2. In Render dashboard, click `New` -> `Blueprint`.
+3. Select this repository.
+4. Render will detect `render.yaml` and create `vaptai-backend`.
+5. In Render service environment variables, set:
+   - `GEMINI_API_KEY=your_real_key`
+   - Optional: `GEMINI_MODEL=gemini-2.5-flash`
+6. Deploy and copy backend URL:
+   - Example: `https://vaptai-backend.onrender.com`
+
+### 2. Deploy Frontend on Netlify (Free)
+
+1. In Netlify dashboard, click `Add new site` -> `Import an existing project`.
+2. Select this repository.
+3. Netlify will use `netlify.toml` automatically.
+4. Add environment variable:
+   - `VITE_API_BASE_URL=https://vaptai-backend.onrender.com/api`
+5. Deploy site.
+
+### 3. Verify Live App
+
+- Open your Netlify URL.
+- Run a scan and test AI chat.
+- If AI fails, verify backend `GEMINI_API_KEY` and quota.
+
 ## Important Notes
 
-- If `nmap` is missing, scan won’t crash; it returns a clear failed status message.
+- If `nmap` is missing, scan now completes with warnings (recon still works; port scan is skipped).
 - AI features require a valid Gemini API key and available quota.
 - Do not commit real API keys. Keep `backend/.env` private.
+- Free tiers may sleep after inactivity; first request can be slow.
 
 ## Troubleshooting
 

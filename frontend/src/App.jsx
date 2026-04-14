@@ -9,7 +9,7 @@ import ReactFlow, { Background, Controls, Handle, Position } from "reactflow";
 import "reactflow/dist/style.css";
 import "./App.css";
 
-const API_BASE = "http://127.0.0.1:5000/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000/api";
 
 const CustomNode = ({ data }) => (
   <div className="custom-topology-node" style={{

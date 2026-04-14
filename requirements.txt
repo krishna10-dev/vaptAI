@@ -13,3 +13,4 @@ numpy==2.4.3
 opencv-python==4.13.0.92
 Pillow==12.1.1
 python-pptx==1.0.2
+gunicorn==23.0.0
