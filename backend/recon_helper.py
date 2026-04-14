@@ -4,18 +4,45 @@ import ssl
 import socket
 import requests
 import time
+import logging
 from datetime import datetime
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _as_single_date(value):
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _lookup_whois(domain):
+    # Support multiple whois package APIs across environments.
+    whois_fn = getattr(whois, "whois", None)
+    if callable(whois_fn):
+        return whois_fn(domain)
+    query_fn = getattr(whois, "query", None)
+    if callable(query_fn):
+        return query_fn(domain)
+    raise AttributeError("No supported WHOIS lookup function found in whois module")
+
+
+def _safe_attr(obj, name, default="N/A"):
+    value = getattr(obj, name, default)
+    return value if value not in (None, "", []) else default
+
 
 def get_whois_info(domain):
     try:
-        w = whois.whois(domain)
+        w = _lookup_whois(domain)
         return {
-            "registrar": w.registrar,
-            "creation_date": str(w.creation_date[0] if isinstance(w.creation_date, list) else w.creation_date),
-            "expiration_date": str(w.expiration_date[0] if isinstance(w.expiration_date, list) else w.expiration_date),
-            "org": w.org or "N/A"
+            "registrar": _safe_attr(w, "registrar"),
+            "creation_date": str(_as_single_date(_safe_attr(w, "creation_date", None))),
+            "expiration_date": str(_as_single_date(_safe_attr(w, "expiration_date", None))),
+            "org": _safe_attr(w, "org"),
         }
-    except:
+    except Exception:
+        LOGGER.warning("WHOIS lookup failed for domain: %s", domain)
         return {"error": "Whois lookup failed"}
 
 def get_dns_records(domain):
@@ -24,7 +51,8 @@ def get_dns_records(domain):
         try:
             answers = dns.resolver.resolve(domain, rtype)
             records[rtype] = [str(r) for r in answers]
-        except:
+        except Exception:
+            LOGGER.debug("DNS lookup failed for %s record on %s", rtype, domain)
             records[rtype] = []
     return records
 
@@ -50,7 +78,11 @@ def get_ssl_details(hostname):
                     "status": "SECURE" if days_left > 0 else "EXPIRED",
                     "grade": "A" if days_left > 90 else "B"
                 }
-    except:
+    except OSError as e:
+        LOGGER.warning("SSL socket check failed for host %s: %s", hostname, e)
+        return {"status": "UNAVAILABLE", "error": "No SSL/HTTPS detected"}
+    except Exception:
+        LOGGER.warning("SSL details fetch failed for host: %s", hostname)
         return {"status": "UNAVAILABLE", "error": "No SSL/HTTPS detected"}
 
 def get_geo_info(hostname):
@@ -65,7 +97,8 @@ def get_geo_info(hostname):
             "lat": res.get("lat"),
             "lon": res.get("lon")
         }
-    except:
+    except Exception:
+        LOGGER.warning("Geo lookup failed for host: %s", hostname)
         return {"error": "Geolocation failed"}
 
 def get_server_health(url):
@@ -95,7 +128,8 @@ def get_server_health(url):
             "security_grade": grade,
             "missing_headers": [sh for sh in security_headers if sh not in h]
         }
-    except:
+    except Exception:
+        LOGGER.warning("Server health check failed for url: %s", url)
         return {"error": "Server health check failed"}
 
 def get_tech_stack(url):
@@ -116,5 +150,6 @@ def get_tech_stack(url):
             "detected_techs": techs,
             "powered_by": headers.get("X-Powered-By", "Hidden")
         }
-    except:
+    except Exception:
+        LOGGER.warning("Tech stack profiling failed for url: %s", url)
         return {"error": "Tech profiling failed"}

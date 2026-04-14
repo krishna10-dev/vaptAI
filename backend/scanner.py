@@ -5,11 +5,20 @@ import socket
 import subprocess
 import json
 import os
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 class VulnerabilityScanner:
     def __init__(self):
-        # Initialize Nmap Port Scanner
-        self.nm = nmap.PortScanner()
+        # Initialize Nmap Port Scanner if the system nmap binary is available.
+        self.nm = None
+        self.nmap_error = ""
+        try:
+            self.nm = nmap.PortScanner()
+        except Exception as e:
+            self.nmap_error = str(e)
+            LOGGER.warning("Nmap scanner initialization failed: %s", e)
         # Common Subdomain List
         self.common_subdomains = ["www", "mail", "ftp", "localhost", "webmail", "smtp", "pop", "ns1", "web", "ns2", "api", "dev", "test", "stage", "blog", "shop", "admin", "vpn", "secure", "proxy"]
 
@@ -53,7 +62,7 @@ class VulnerabilityScanner:
             return nuclei_findings
 
         except Exception as e:
-            print(f"⚠️ Nuclei not found or failed: {e}")
+            LOGGER.warning("Nuclei not found or failed for target %s: %s", target, e)
             return []
 
     def enumerate_subdomains(self, domain):
@@ -112,13 +121,16 @@ class VulnerabilityScanner:
                     "cves": []
                 })
         except Exception as e:
-            # It's common for non-web servers to fail here, just ignore
-            pass
+            LOGGER.debug("Web header check failed for %s: %s", target, e)
         
         return findings
 
     def scan_target(self, target, arguments='-sV --script vuln -T4'):
         print(f"[*] Starting Deep Vulnerability Scan on: {target} with args: {arguments}")
+        if self.nm is None:
+            raise RuntimeError(
+                "nmap is not installed or not in PATH. Install nmap on the host system and restart backend."
+            )
         
         try:
             self.nm.scan(target, arguments=arguments)
@@ -164,5 +176,5 @@ class VulnerabilityScanner:
             return scan_results
 
         except Exception as e:
-            print(f"Error during scan: {e}")
-            return []
+            LOGGER.exception("Nmap scan failed for %s: %s", target, e)
+            raise

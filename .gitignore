@@ -58,6 +58,11 @@ backend/forensic_evidence/
 
 # Project specific
 checkpoints/
+.tools/
+
+# Secrets
+backend/.env
+*.env
 
 # OS
 .DS_Store
