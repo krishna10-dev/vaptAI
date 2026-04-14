@@ -71,6 +71,10 @@ def run_async_scan(scan_id, target, mode="quick"):
         scanner = VulnerabilityScanner()
         active_scans[scan_id]["status"] = "running"
         active_scans[scan_id]["warnings"] = []
+        if scanner.nm is None:
+            active_scans[scan_id]["warnings"].append(
+                "nmap not available: using fallback TCP scan on common ports."
+            )
         
         # 1. Human-Friendly Health & Recon
         active_scans[scan_id]["message"] = "Checking server pulse & geolocation..."
@@ -93,13 +97,7 @@ def run_async_scan(scan_id, target, mode="quick"):
         active_scans[scan_id]["subdomains"] = subdomains
 
         active_scans[scan_id]["message"] = "Scanning ports & service banners..."
-        try:
-            network_results = scanner.scan_target(target)
-        except RuntimeError as e:
-            network_results = []
-            warning = str(e)
-            active_scans[scan_id]["warnings"].append(warning)
-            active_scans[scan_id]["message"] = "Continuing without nmap-based port scan..."
+        network_results = scanner.scan_target(target)
         
         # 3. Deep Analysis (Mode based)
         web_results = []
@@ -201,6 +199,11 @@ def get_history():
     except Exception:
         LOGGER.exception("Failed to fetch scan history")
         return jsonify({"error": "Failed to load scan history"}), 500
+
+# Backward-compatible aliases if frontend base URL is configured without `/api`.
+@app.route('/history', methods=['GET'])
+def get_history_alias():
+    return get_history()
 
 @app.route('/api/ai_analyze', methods=['POST'])
 def ai_analyze():
