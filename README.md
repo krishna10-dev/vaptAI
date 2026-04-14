@@ -43,7 +43,9 @@ For full scan functionality:
 - `nmap` (required for port/service vulnerability scanning)
 - `nuclei` (optional, used in `full` scan mode)
 
-## Setup
+## Local Quick Start (Recommended)
+
+Use this if you want to run the project on your own system.
 
 ### 1. Clone
 
@@ -67,7 +69,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. Configure AI key
+### 3. Configure backend environment
 
 ```bash
 cp backend/.env.example backend/.env
@@ -80,7 +82,7 @@ GEMINI_API_KEY=your_real_key_here
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-### 4. Frontend setup
+### 4. Frontend install
 
 ```bash
 cd frontend
@@ -88,38 +90,56 @@ npm install
 cd ..
 ```
 
-## Run Locally
+### 5. Run locally
 
 Open 2 terminals.
 
-### Terminal 1: Backend
+Terminal 1: Backend
+
+Linux/macOS:
 
 ```bash
 cd backend
 ../venv/bin/python app.py
 ```
 
-Backend runs at: `http://127.0.0.1:5000`
+Windows PowerShell:
 
-### Terminal 2: Frontend
+```powershell
+cd backend
+..\venv\Scripts\python.exe app.py
+```
+
+Terminal 2: Frontend
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Frontend runs at: `http://127.0.0.1:5173`
+URLs:
+- Frontend: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:5000`
+- Health check: `http://127.0.0.1:5000/api/health`
 
-## Verify Installation
+## Run From GitHub On Any New Machine
 
-- Backend health check:
+If your friend clones this repo, they only need to do:
 
 ```bash
-curl http://127.0.0.1:5000/api/history
+git clone https://github.com/krishna10-dev/vaptAI.git
+cd vaptAI
+python -m venv venv
+# Linux/macOS
+source venv/bin/activate
+# Windows PowerShell
+# .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp backend/.env.example backend/.env
+cd frontend && npm install && cd ..
 ```
 
-- Frontend:
-  - Open `http://127.0.0.1:5173`
+Then set `GEMINI_API_KEY` in `backend/.env` and run backend + frontend as shown above.
 
 ## API Endpoints (Core)
 
@@ -167,6 +187,7 @@ This repo is pre-configured for:
 ## Important Notes
 
 - If `nmap` is missing, scan now completes with warnings (recon still works; port scan is skipped).
+- For full scan features, install `nmap` on the host machine and ensure it is in `PATH`.
 - AI features require a valid Gemini API key and available quota.
 - Do not commit real API keys. Keep `backend/.env` private.
 - Free tiers may sleep after inactivity; first request can be slow.
