@@ -5,9 +5,16 @@ import socket
 import requests
 import time
 import logging
+import re
 from datetime import datetime
 
 LOGGER = logging.getLogger(__name__)
+
+def validate_hostname(hostname):
+    """Ensure hostname contains only allowed characters."""
+    if not hostname:
+        return False
+    return bool(re.match(r'^[a-zA-Z0-9.-]+$', str(hostname)))
 
 
 def _as_single_date(value):
@@ -33,9 +40,12 @@ def _safe_attr(obj, name, default="N/A"):
 
 
 def get_whois_info(domain):
+    if not validate_hostname(domain):
+        return {"error": "Invalid domain format"}
     try:
         w = _lookup_whois(domain)
         return {
+            "domain_name": _safe_attr(w, "domain_name"),
             "registrar": _safe_attr(w, "registrar"),
             "creation_date": str(_as_single_date(_safe_attr(w, "creation_date", None))),
             "expiration_date": str(_as_single_date(_safe_attr(w, "expiration_date", None))),
@@ -46,6 +56,8 @@ def get_whois_info(domain):
         return {"error": "Whois lookup failed"}
 
 def get_dns_records(domain):
+    if not validate_hostname(domain):
+        return {"error": "Invalid domain format"}
     records = {}
     for rtype in ['A', 'MX', 'NS', 'TXT']:
         try:
@@ -57,6 +69,8 @@ def get_dns_records(domain):
     return records
 
 def get_ssl_details(hostname):
+    if not validate_hostname(hostname):
+        return {"status": "UNAVAILABLE", "error": "Invalid hostname"}
     try:
         context = ssl.create_default_context()
         with socket.create_connection((hostname, 443), timeout=5) as sock:
@@ -86,6 +100,8 @@ def get_ssl_details(hostname):
         return {"status": "UNAVAILABLE", "error": "No SSL/HTTPS detected"}
 
 def get_geo_info(hostname):
+    if not validate_hostname(hostname):
+        return {"error": "Invalid hostname"}
     try:
         ip = socket.gethostbyname(hostname)
         res = requests.get(f"http://ip-api.com/json/{ip}", timeout=5).json()
@@ -103,6 +119,13 @@ def get_geo_info(hostname):
 
 def get_server_health(url):
     """Measures load time and responsiveness"""
+    # Extract host to validate
+    from urllib.parse import urlparse
+    parsed = urlparse(url if "://" in url else f"http://{url}")
+    host = parsed.hostname or url.split('/')[0]
+    if not validate_hostname(host):
+        return {"error": "Invalid URL format"}
+        
     try:
         if not url.startswith("http"): url = "http://" + url
         start = time.time()
@@ -133,6 +156,13 @@ def get_server_health(url):
         return {"error": "Server health check failed"}
 
 def get_tech_stack(url):
+    # Extract host to validate
+    from urllib.parse import urlparse
+    parsed = urlparse(url if "://" in url else f"http://{url}")
+    host = parsed.hostname or url.split('/')[0]
+    if not validate_hostname(host):
+        return {"error": "Invalid URL format"}
+        
     try:
         if not url.startswith("http"): url = "http://" + url
         response = requests.get(url, timeout=5, verify=False)

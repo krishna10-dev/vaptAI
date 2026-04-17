@@ -40,13 +40,26 @@ class VulnerabilityScanner:
         # Common Subdomain List
         self.common_subdomains = ["www", "mail", "ftp", "localhost", "webmail", "smtp", "pop", "ns1", "web", "ns2", "api", "dev", "test", "stage", "blog", "shop", "admin", "vpn", "secure", "proxy"]
 
+    def _validate_host(self, host):
+        """Strict validation for hostname/IP."""
+        if not host:
+            return False
+        # Prevent command injection characters or path traversal
+        return bool(re.match(r'^[a-zA-Z0-9.-]+$', host))
+
     def _extract_host(self, target):
         if not target:
             return ""
         if "://" in target:
             parsed = urlparse(target)
-            return parsed.hostname or target
-        return target.split("/")[0]
+            host = parsed.hostname or target
+        else:
+            host = target.split("/")[0]
+        
+        # Clean port if present in host (e.g. 127.0.0.1:8080)
+        if ":" in host:
+            host = host.split(":")[0]
+        return host
 
     def _fallback_tcp_scan(self, host, timeout=0.8):
         """Fallback scan for environments where nmap binary is unavailable."""
@@ -83,10 +96,12 @@ class VulnerabilityScanner:
 
     def run_nuclei(self, target, templates="cves,default-logins,exposed-panels,vulnerabilities"):
         """ Runs Nuclei scanner with AI-suggested templates """
+        host = self._extract_host(target)
+        if not self._validate_host(host):
+            LOGGER.warning("Invalid host for Nuclei: %s", host)
+            return []
+            
         print(f"[*] Starting Deep Vulnerability Scan with Nuclei: {target} using templates: {templates}")
-        
-        # Ensure target is just the host for Nuclei
-        host = target.replace("http://", "").replace("https://", "").split("/")[0]
         
         try:
             # Check if nuclei is installed by running version check
@@ -146,6 +161,10 @@ class VulnerabilityScanner:
     def check_web_headers(self, target):
         """ Checks for missing security headers on Port 80/443 """
         findings = []
+        host = self._extract_host(target)
+        if not self._validate_host(host):
+            return findings
+            
         try:
             # Handle URL formatting
             if not target.startswith("http"):
@@ -185,9 +204,13 @@ class VulnerabilityScanner:
         return findings
 
     def scan_target(self, target, arguments='-sV --script vuln -T4'):
+        host = self._extract_host(target)
+        if not self._validate_host(host):
+            LOGGER.warning("Invalid host for Nmap: %s", host)
+            return []
+            
         print(f"[*] Starting Deep Vulnerability Scan on: {target} with args: {arguments}")
         if self.nm is None:
-            host = self._extract_host(target)
             LOGGER.warning("Using fallback TCP scan because nmap is unavailable for target: %s", host)
             return self._fallback_tcp_scan(host)
         

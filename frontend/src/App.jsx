@@ -41,6 +41,9 @@ function App() {
   const [history, setHistory] = useState([]);
   const [error, setError] = useState(null);
   const [aiReport, setAiReport] = useState(null);
+  const [securityScore, setSecurityScore] = useState(null);
+  const [integrityHash, setIntegrityHash] = useState(null);
+  const [warnings, setWarnings] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -60,6 +63,7 @@ function App() {
   const [aesResult, setAesResult] = useState("");
   const [pcapData, setPcapData] = useState(null);
   const [pcapLoading, setPcapLoading] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
 
   const chatEndRef = useRef(null);
 
@@ -162,6 +166,10 @@ function App() {
             setHealthData(res.data.health || null);
             setGeoData(res.data.geo || null);
             setSubdomains(res.data.subdomains || []);
+            setAiReport(res.data.ai_report || null);
+            setSecurityScore(res.data.security_score || null);
+            setIntegrityHash(res.data.integrity_hash || null);
+            setWarnings(res.data.warnings || []);
             setLoading(false);
             setScanId(null);
             fetchHistory();
@@ -201,6 +209,37 @@ function App() {
     }
   };
 
+  const handleHistoryClick = async (historyId) => {
+    setLoading(true);
+    setError(null);
+    setAiReport(null);
+    setSecurityScore(null);
+    setIntegrityHash(null);
+    setWarnings([]);
+    try {
+      const res = await axios.get(`${API_BASE}/history/${historyId}`);
+      const details = res.data.full_details;
+      if (details) {
+        setTarget(details.target || "");
+        setScanData(details.vulnerabilities || details.scan_data || []);
+        setReconData(details.recon || null);
+        setSslData(details.ssl || null);
+        setHealthData(details.health || null);
+        setGeoData(details.geo || null);
+        setSubdomains(details.subdomains || []);
+        setAiReport(details.ai_report || null);
+        setSecurityScore(details.security_score || null);
+        setIntegrityHash(res.data.integrity_hash || details.integrity_hash || null);
+        setWarnings(details.warnings || []);
+        setActiveTab("vulnerabilities");
+      }
+    } catch (err) {
+      setError(getApiError(err, "Failed to load scan details"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
 
@@ -231,10 +270,54 @@ function App() {
     try {
       const res = await axios.post(`${API_BASE}/ai_analyze`, { target, scan_data: scanData });
       setAiReport(res.data.ai_report || "No AI report generated.");
+      setSecurityScore(res.data.security_score || null);
     } catch (err) {
       setError(getApiError(err, "AI analysis failed"));
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!scanData) return;
+    setReportLoading(true);
+    try {
+      let currentAiReport = aiReport;
+      let score = securityScore;
+      if (!currentAiReport) {
+        const aiRes = await axios.post(`${API_BASE}/ai_analyze`, { target, scan_data: scanData });
+        currentAiReport = aiRes.data.ai_report || "AI analysis failed to generate.";
+        score = aiRes.data.security_score;
+        setAiReport(currentAiReport);
+        setSecurityScore(score);
+      }
+
+      const response = await axios.post(`${API_BASE}/report`, {
+        target,
+        mode: scanMode,
+        scan_data: scanData,
+        recon: reconData,
+        ssl: sslData,
+        health: healthData,
+        geo: geoData,
+        subdomains: subdomains,
+        ai_report: currentAiReport,
+        security_score: score,
+        integrity_hash: integrityHash,
+        warnings: warnings
+      }, { responseType: 'blob' });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `VaptAI_Full_Report_${target.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      setError(getApiError(err, "Failed to download report"));
+    } finally {
+      setReportLoading(false);
     }
   };
 
@@ -282,7 +365,7 @@ function App() {
           <h3><History size={14} /> Audit History</h3>
           <div className="history-list">
             {history.map((h) => (
-              <div key={h.id} className="history-card" onClick={() => { setActiveTab("vulnerabilities"); handleScan(h.target); }}>
+              <div key={h.id} className="history-card" onClick={() => handleHistoryClick(h.id)}>
                 <strong>{h.target}</strong>
                 <span>{h.timestamp}</span>
               </div>
@@ -329,6 +412,9 @@ function App() {
                   <div className="hud-item"><label><Activity size={12} /> Latency</label><span>{healthData?.latency_ms} ms</span></div>
                   <div className="hud-item"><label><ShieldCheck size={12} /> Security</label><span style={{ color: healthData?.security_grade === "A" ? "#7ee787" : "#f85149" }}>Grade {healthData?.security_grade}</span></div>
                   <div className="hud-item"><label><Zap size={12} /> Threats</label><span>{scanData.filter((i) => String(i.risk_level || "").includes("CRITICAL")).length} Critical</span></div>
+                  <button onClick={handleDownloadReport} className="report-download-btn" disabled={reportLoading}>
+                    <FileText size={16} /> {reportLoading ? "GENERATING REPORT..." : "DOWNLOAD PDF REPORT"}
+                  </button>
                 </div>
               )}
 

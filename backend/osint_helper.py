@@ -1,6 +1,8 @@
 import subprocess
 import os
 import json
+import re
+import time
 
 # Path to the Sherlock executable in the virtual environment
 SHERLOCK_PATH = os.path.join(os.getcwd(), "sherlock_venv", "bin", "sherlock")
@@ -10,8 +12,12 @@ def run_sherlock(username):
     Runs Sherlock OSINT tool for a given username.
     Returns a list of found social media profiles.
     """
+    # 1. Validation to prevent command injection
+    if not re.match(r'^[a-zA-Z0-9._-]+$', username):
+        print(f"⚠️ Invalid username format: {username}")
+        return []
+
     if not os.path.exists(SHERLOCK_PATH):
-        # Fallback for Windows if bin/sherlock doesn't exist (might be Scripts/sherlock)
         windows_path = os.path.join(os.getcwd(), "sherlock_venv", "Scripts", "sherlock.exe")
         executable = windows_path if os.path.exists(windows_path) else "sherlock"
     else:
@@ -19,29 +25,26 @@ def run_sherlock(username):
 
     print(f"🔍 Running Sherlock OSINT for: {username}")
     
+    # 2. Use unique report file to avoid collisions
+    report_file = f"report_{username}_{int(time.time())}.json"
+    
     try:
-        # Run Sherlock and output to JSON
+        # Run Sherlock and output to unique JSON file
         # --json: output results to a json file
         # --timeout 1: limit wait time per site for speed
-        output_file = f"osint_{username}.json"
-        
-        # Note: Sherlock creates the file automatically with --json
-        # Using subprocess to run the command
-        process = subprocess.run(
-            [executable, username, "--json", "report.json", "--timeout", "1"],
+        subprocess.run(
+            [executable, username, "--json", report_file, "--timeout", "1"],
             capture_output=True,
-            text=True
+            text=True,
+            check=False
         )
         
-        # Check if report.json was created
-        if os.path.exists("report.json"):
-            with open("report.json", "r") as f:
+        if os.path.exists(report_file):
+            with open(report_file, "r") as f:
                 data = json.load(f)
             
-            # Cleanup
-            os.remove("report.json")
+            os.remove(report_file)
             
-            # Format results
             profiles = []
             for site, info in data.items():
                 if info.get("status") == "CLAIMED":
@@ -51,9 +54,12 @@ def run_sherlock(username):
                     })
             return profiles
         else:
-            print("⚠️ Sherlock report.json not found.")
+            print(f"⚠️ Sherlock report {report_file} not found.")
             return []
 
     except Exception as e:
         print(f"❌ Sherlock Error: {e}")
+        # Final cleanup attempt
+        if os.path.exists(report_file):
+            os.remove(report_file)
         return []

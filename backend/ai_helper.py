@@ -26,10 +26,10 @@ DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini
 MODEL_FALLBACKS = [
     DEFAULT_MODEL,
     "gemini-2.5-flash",
-    "gemma-3-4b-it",
-    "gemma-3-12b-it",
-    "gemini-2.0-flash",
     "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemma-3-12b-it",
+    "gemma-3-4b-it",
 ]
 INVALID_KEY_MARKERS = {"", "your_gemini_api_key_here", "replace_me", "changeme"}
 
